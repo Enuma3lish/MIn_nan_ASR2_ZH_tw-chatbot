@@ -9,6 +9,7 @@ from ..models.schemas import LanguageType
 from ..services.streaming_service import streaming_session_manager
 from ..services.tts_service import tts_service
 from ..services.translation_service import translation_service
+from ..utils.async_helpers import run_in_thread
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +79,20 @@ async def websocket_asr_endpoint(websocket: WebSocket):
                     if message_type == "config":
                         # Update configuration
                         lang = message.get("language", "chinese")
-                        config["language"] = LanguageType(lang)
-                        config["interim_results"] = message.get("interim_results", False)
+                        try:
+                            config["language"] = LanguageType(lang)
+                            config["interim_results"] = message.get("interim_results", False)
 
-                        await websocket.send_json({
-                            "type": "config_updated",
-                            "language": lang,
-                            "interim_results": config["interim_results"]
-                        })
+                            await websocket.send_json({
+                                "type": "config_updated",
+                                "language": lang,
+                                "interim_results": config["interim_results"]
+                            })
+                        except ValueError:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": f"Invalid language: {lang}. Must be 'chinese' or 'min_nan'"
+                            })
 
                     elif message_type == "stop":
                         # Get final transcription
@@ -231,14 +238,20 @@ async def websocket_voice_chat_endpoint(websocket: WebSocket):
                         src_lang = message.get("source_language", "chinese")
                         tgt_lang = message.get("target_language", "min_nan")
 
-                        config["source_language"] = LanguageType(src_lang)
-                        config["target_language"] = LanguageType(tgt_lang)
+                        try:
+                            config["source_language"] = LanguageType(src_lang)
+                            config["target_language"] = LanguageType(tgt_lang)
 
-                        await websocket.send_json({
-                            "type": "config_updated",
-                            "source_language": src_lang,
-                            "target_language": tgt_lang
-                        })
+                            await websocket.send_json({
+                                "type": "config_updated",
+                                "source_language": src_lang,
+                                "target_language": tgt_lang
+                            })
+                        except ValueError as e:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": f"Invalid language. Must be 'chinese' or 'min_nan'"
+                            })
 
                     elif message_type == "stop":
                         # Process final audio
@@ -253,8 +266,9 @@ async def websocket_voice_chat_endpoint(websocket: WebSocket):
                                 "text": transcribed_text
                             })
 
-                            # 2. Translate
-                            translated_text, translation_time = translation_service.translate(
+                            # 2. Translate (run in thread pool to avoid blocking)
+                            translated_text, translation_time = await run_in_thread(
+                                translation_service.translate,
                                 transcribed_text,
                                 config["source_language"],
                                 config["target_language"]
@@ -265,8 +279,9 @@ async def websocket_voice_chat_endpoint(websocket: WebSocket):
                                 "text": translated_text
                             })
 
-                            # 3. Generate speech
-                            output_path, tts_time = tts_service.text_to_speech(
+                            # 3. Generate speech (run in thread pool to avoid blocking)
+                            output_path, tts_time = await run_in_thread(
+                                tts_service.text_to_speech,
                                 translated_text,
                                 f"voice_chat_{session_id}.wav"
                             )

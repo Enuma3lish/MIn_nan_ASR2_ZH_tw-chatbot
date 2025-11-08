@@ -8,6 +8,7 @@ import asyncio
 
 from ..models.schemas import LanguageType
 from .asr_service import asr_service
+from ..utils.async_helpers import run_in_thread
 
 logger = logging.getLogger(__name__)
 
@@ -107,24 +108,24 @@ class StreamingASRService:
             logger.debug(f"Not enough audio yet: {duration:.2f}s")
             return None
 
+        import tempfile
+        import soundfile as sf
+        import os
+
+        tmp_path = None
         try:
             # Save to temporary file for transcription
-            import tempfile
-            import soundfile as sf
-
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
                 tmp_path = tmp_file.name
-                sf.write(tmp_path, audio, self.sample_rate)
+                # Run file I/O in thread pool to avoid blocking
+                await run_in_thread(sf.write, tmp_path, audio, self.sample_rate)
 
-            # Transcribe using existing ASR service
-            text, confidence, processing_time = asr_service.transcribe(
+            # Transcribe using existing ASR service (run in thread pool)
+            text, confidence, processing_time = await run_in_thread(
+                asr_service.transcribe,
                 tmp_path,
                 language
             )
-
-            # Clean up temp file
-            import os
-            os.remove(tmp_path)
 
             logger.info(
                 f"Streaming transcription: '{text}' "
@@ -136,6 +137,13 @@ class StreamingASRService:
         except Exception as e:
             logger.error(f"Error in streaming transcription: {str(e)}")
             raise
+        finally:
+            # Ensure temp file is always cleaned up
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup temp file {tmp_path}: {cleanup_error}")
 
     async def transcribe_final(
         self,
@@ -155,21 +163,23 @@ class StreamingASRService:
         if len(audio) == 0:
             return None
 
-        try:
-            import tempfile
-            import soundfile as sf
+        import tempfile
+        import soundfile as sf
+        import os
 
+        tmp_path = None
+        try:
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
                 tmp_path = tmp_file.name
-                sf.write(tmp_path, audio, self.sample_rate)
+                # Run file I/O in thread pool to avoid blocking
+                await run_in_thread(sf.write, tmp_path, audio, self.sample_rate)
 
-            text, confidence, processing_time = asr_service.transcribe(
+            # Transcribe using existing ASR service (run in thread pool)
+            text, confidence, processing_time = await run_in_thread(
+                asr_service.transcribe,
                 tmp_path,
                 language
             )
-
-            import os
-            os.remove(tmp_path)
 
             logger.info(f"Final transcription: '{text}'")
 
@@ -178,6 +188,13 @@ class StreamingASRService:
         except Exception as e:
             logger.error(f"Error in final transcription: {str(e)}")
             raise
+        finally:
+            # Ensure temp file is always cleaned up
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup temp file {tmp_path}: {cleanup_error}")
 
 
 class StreamingSessionManager:
