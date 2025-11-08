@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time ASR Client - Min Nan & Chinese Voice Chatbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .config-section {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 10px;
+            width: 20px;
+            height: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #startBtn {
+            background: #4CAF50;
+            color: white;
+        }
+
+        #startBtn:hover:not(:disabled) {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+        }
+
+        #stopBtn {
+            background: #f44336;
+            color: white;
+        }
+
+        #stopBtn:hover:not(:disabled) {
+            background: #da190b;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status.recording {
+            background: #fff3e0;
+            color: #e65100;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .transcription-box {
+            background: #f9f9f9;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 150px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .transcription-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+
+        .transcription-item.interim {
+            border-left-color: #ffa726;
+            opacity: 0.7;
+        }
+
+        .transcription-text {
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .transcription-meta {
+            color: #999;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .empty-state {
+            color: #999;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .recording-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #f44336;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Real-time Voice Recognition</h1>
+        <p class="subtitle">Min Nan & Chinese Voice Chatbot</p>
+
+        <div class="config-section">
+            <div class="form-group">
+                <label for="language">Language:</label>
+                <select id="language">
+                    <option value="chinese">Chinese (中文)</option>
+                    <option value="min_nan">Min Nan (閩南語)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="interimResults">
+                    <label for="interimResults">Show interim results (faster, less accurate)</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn">Start Recording</button>
+            <button id="stopBtn" disabled>Stop Recording</button>
+        </div>
+
+        <div id="status" class="status disconnected">
+            Disconnected
+        </div>
+
+        <div class="transcription-box" id="transcriptionBox">
+            <div class="empty-state">
+                Click "Start Recording" to begin...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let websocket = null;
+        let mediaRecorder = null;
+        let audioContext = null;
+        let audioStream = null;
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDiv = document.getElementById('status');
+        const transcriptionBox = document.getElementById('transcriptionBox');
+        const languageSelect = document.getElementById('language');
+        const interimResultsCheckbox = document.getElementById('interimResults');
+
+        // WebSocket server URL (adjust if needed)
+        const WS_URL = 'ws://localhost:8000/api/v1/ws/asr';
+
+        function updateStatus(message, className) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function addTranscription(text, isFinal = true) {
+            // Remove empty state if present
+            const emptyState = transcriptionBox.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            // Check if we should update the last interim result
+            if (!isFinal) {
+                const lastItem = transcriptionBox.querySelector('.transcription-item:last-child');
+                if (lastItem && lastItem.classList.contains('interim')) {
+                    lastItem.querySelector('.transcription-text').textContent = text;
+                    return;
+                }
+            }
+
+            // Create new transcription item
+            const item = document.createElement('div');
+            item.className = `transcription-item ${isFinal ? '' : 'interim'}`;
+
+            const textDiv = document.createElement('div');
+            textDiv.className = 'transcription-text';
+            textDiv.textContent = text;
+
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'transcription-meta';
+            metaDiv.textContent = `${isFinal ? 'Final' : 'Interim'} • ${new Date().toLocaleTimeString()}`;
+
+            item.appendChild(textDiv);
+            item.appendChild(metaDiv);
+
+            transcriptionBox.appendChild(item);
+            transcriptionBox.scrollTop = transcriptionBox.scrollHeight;
+        }
+
+        async function startRecording() {
+            try {
+                // Connect WebSocket
+                websocket = new WebSocket(WS_URL);
+
+                websocket.onopen = async () => {
+                    updateStatus('Connected', 'connected');
+
+                    // Send configuration
+                    websocket.send(JSON.stringify({
+                        type: 'config',
+                        language: languageSelect.value,
+                        interim_results: interimResultsCheckbox.checked
+                    }));
+
+                    // Start audio capture
+                    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                    // Create audio context
+                    audioContext = new AudioContext({ sampleRate: 16000 });
+                    const source = audioContext.createMediaStreamSource(audioStream);
+
+                    // Create script processor for audio chunks
+                    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                    processor.onaudioprocess = (e) => {
+                        if (websocket && websocket.readyState === WebSocket.OPEN) {
+                            const audioData = e.inputBuffer.getChannelData(0);
+                            // Convert to Int16Array
+                            const int16Data = new Int16Array(audioData.length);
+                            for (let i = 0; i < audioData.length; i++) {
+                                int16Data[i] = Math.max(-32768, Math.min(32767, audioData[i] * 32768));
+                            }
+                            websocket.send(int16Data.buffer);
+                        }
+                    };
+
+                    source.connect(processor);
+                    processor.connect(audioContext.destination);
+
+                    updateStatus('🔴 Recording...', 'recording');
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                };
+
+                websocket.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+
+                    if (message.type === 'transcription') {
+                        addTranscription(message.text, message.is_final);
+                    } else if (message.type === 'error') {
+                        console.error('WebSocket error:', message.message);
+                        alert('Error: ' + message.message);
+                    } else if (message.type === 'stopped') {
+                        updateStatus('Stopped', 'connected');
+                    }
+                };
+
+                websocket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Error: Connection failed', 'disconnected');
+                };
+
+                websocket.onclose = () => {
+                    updateStatus('Disconnected', 'disconnected');
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                };
+
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                alert('Error: ' + error.message);
+                updateStatus('Error: Could not access microphone', 'disconnected');
+            }
+        }
+
+        function stopRecording() {
+            // Send stop message
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify({ type: 'stop' }));
+            }
+
+            // Stop audio stream
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+
+            // Close audio context
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            // Close WebSocket
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            updateStatus('Disconnected', 'disconnected');
+        }
+
+        startBtn.addEventListener('click', startRecording);
+        stopBtn.addEventListener('click', stopRecording);
+
+        // Clear transcriptions when language changes
+        languageSelect.addEventListener('change', () => {
+            transcriptionBox.innerHTML = '<div class="empty-state">Language changed. Click "Start Recording" to begin...</div>';
+        });
+    </script>
+</body>
+</html>

@@ -7,6 +7,7 @@ FastAPI backend for Chinese and Min Nan voice-to-text and text-to-voice conversi
 - 🎤 **Automatic Speech Recognition (ASR)**
   - Chinese speech-to-text using OpenAI Whisper
   - Min Nan speech-to-text using Wav2Vec2
+  - **Real-time streaming ASR via WebSocket** ⚡ NEW!
 
 - 🔊 **Text-to-Speech (TTS)**
   - Min Nan text-to-speech using Facebook MMS-TTS
@@ -15,11 +16,18 @@ FastAPI backend for Chinese and Min Nan voice-to-text and text-to-voice conversi
 - 🔄 **Voice-to-Voice Conversion**
   - Convert Chinese voice to Min Nan voice
   - Convert Min Nan voice to text and back to voice
+  - **Real-time voice chat with live translation** ⚡ NEW!
 
 - 🌐 **RESTful API**
   - Well-documented OpenAPI/Swagger interface
   - CORS support for frontend integration
   - File upload and download capabilities
+  - **WebSocket support for real-time streaming** ⚡ NEW!
+
+- 🔀 **Translation**
+  - Neural Machine Translation (M2M-100) for Chinese ↔ Min Nan
+  - Dictionary-based translation with 40+ common phrases
+  - Hybrid approach for optimal results
 
 ## Tech Stack
 
@@ -128,13 +136,48 @@ The API will be available at:
 
 ## API Endpoints
 
-### Health Check
+### REST API Endpoints
+
+#### Health Check
 
 ```http
 GET /api/v1/health
 ```
 
 Check API status and model loading status.
+
+### WebSocket Endpoints (Real-time) ⚡ NEW!
+
+#### Real-time ASR
+
+```http
+WS /api/v1/ws/asr
+```
+
+Stream audio from your microphone and get real-time transcriptions.
+
+**Quick Start:**
+```bash
+# Open the browser client
+open examples/realtime_asr_client.html
+
+# Or use the Python client
+python examples/realtime_client.py
+```
+
+See [REALTIME.md](./REALTIME.md) for full documentation.
+
+#### Real-time Voice Chat
+
+```http
+WS /api/v1/ws/voice-chat
+```
+
+Real-time voice-to-voice conversion with translation.
+
+---
+
+### File Upload Endpoints
 
 ### Transcribe Audio (ASR)
 
