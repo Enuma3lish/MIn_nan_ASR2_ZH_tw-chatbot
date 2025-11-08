@@ -6,6 +6,7 @@ import sys
 
 from .config import settings
 from .api.routes import router
+from .api.websocket_routes import router as ws_router
 
 # Configure logging
 logging.basicConfig(
@@ -92,6 +93,9 @@ async def root():
 
 # Include API routes
 app.include_router(router, prefix=settings.API_V1_STR)
+
+# Include WebSocket routes
+app.include_router(ws_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":
