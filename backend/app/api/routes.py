@@ -16,6 +16,7 @@ from ..models.schemas import (
 )
 from ..services.asr_service import asr_service
 from ..services.tts_service import tts_service
+from ..services.translation_service import translation_service
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,11 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         version=settings.VERSION,
-        models_loaded=asr_service.models_loaded and tts_service.models_loaded
+        models_loaded=(
+            asr_service.models_loaded and
+            tts_service.models_loaded
+            # Translation service can work without neural models (dictionary fallback)
+        )
     )
 
 
@@ -262,11 +267,15 @@ async def load_models():
         if not tts_service.models_loaded:
             tts_service.load_models()
 
+        if not translation_service.models_loaded:
+            translation_service.load_models()
+
         return {
             "status": "success",
             "message": "Models loaded successfully",
             "asr_loaded": asr_service.models_loaded,
-            "tts_loaded": tts_service.models_loaded
+            "tts_loaded": tts_service.models_loaded,
+            "translation_loaded": translation_service.models_loaded
         }
     except Exception as e:
         logger.error(f"Error loading models: {str(e)}")

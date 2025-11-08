@@ -113,7 +113,8 @@ class TTSService:
         text: str,
         source_language: LanguageType,
         target_language: LanguageType,
-        output_filename: str = None
+        output_filename: str = None,
+        use_neural_translation: bool = True
     ) -> Tuple[str, str, float]:
         """
         Translate text (if needed) and convert to speech
@@ -123,6 +124,7 @@ class TTSService:
             source_language: Source language of the text
             target_language: Target language for speech output
             output_filename: Optional custom output filename
+            use_neural_translation: Whether to use neural translation (default: True)
 
         Returns:
             Tuple of (translated_text, output_file_path, processing_time)
@@ -130,20 +132,27 @@ class TTSService:
         start_time = time.time()
 
         try:
-            # For now, we'll use the text as-is
-            # In a production system, you would add translation here
-            # e.g., using a Chinese to Min Nan translation model
-            translated_text = text
+            # Import here to avoid circular dependency
+            from .translation_service import translation_service
 
-            if source_language == LanguageType.CHINESE and target_language == LanguageType.MIN_NAN:
-                logger.info("Translation from Chinese to Min Nan would happen here")
-                # TODO: Implement translation model
-                # For now, we'll just pass through the text
-                # You might want to use a translation model or dictionary
-                pass
+            # Translate text if source and target languages differ
+            if source_language != target_language:
+                logger.info(f"Translating from {source_language} to {target_language}")
+                translated_text, translation_time = translation_service.translate(
+                    text,
+                    source_language,
+                    target_language,
+                    use_neural=use_neural_translation
+                )
+                logger.info(
+                    f"Translation completed in {translation_time:.2f}s: "
+                    f"'{text}' -> '{translated_text}'"
+                )
+            else:
+                translated_text = text
 
             # Convert to speech (always Min Nan for this model)
-            output_path, _ = self.text_to_speech(translated_text, output_filename)
+            output_path, tts_time = self.text_to_speech(translated_text, output_filename)
 
             processing_time = time.time() - start_time
 
