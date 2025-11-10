@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build: .
@@ -11,7 +9,9 @@ services:
       - ./outputs:/app/outputs
       - ./model_cache:/app/model_cache
     environment:
-      - DEVICE=cpu
+      - DEVICE=cuda
+      
+      
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
@@ -19,3 +19,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

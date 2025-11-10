@@ -6,6 +6,7 @@ from transformers import (
     WhisperForConditionalGeneration,
     Wav2Vec2Processor,
     Wav2Vec2ForCTC,
+    pipeline  # <-- 關鍵
 )
 import time
 import logging
@@ -20,68 +21,58 @@ class ASRService:
     """Service for Automatic Speech Recognition (ASR) for Chinese and Min Nan"""
 
     def __init__(self):
+        # 初始化設備
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"ASR Service initializing on device: {self.device}")
+        self.torch_device_id = 0 if self.device == "cuda" else -1 # Pipeline 需要 0 或 -1
+        logger.info(f"ASR Service initializing on device: {self.device} (pipeline device: {self.torch_device_id})")
 
         # Initialize models as None - lazy loading
-        self.chinese_processor = None
-        self.chinese_model = None
+        self.chinese_pipeline = None # <-- 我們現在使用 pipeline
         self.min_nan_processor = None
         self.min_nan_model = None
 
-        self.models_loaded = False
+    def _load_chinese_models(self):
+        """Helper to load only Chinese ASR models using pipeline"""
+        if self.chinese_pipeline is not None:
+            return
 
-    def load_models(self):
-        """Load ASR models (lazy loading)"""
-        try:
-            logger.info("Loading ASR models...")
+        logger.info(f"Loading Chinese ASR pipeline: {settings.CHINESE_ASR_MODEL}")
+        
+        # 使用 pipeline，它會自動處理 chunking (長音訊)
+        self.chinese_pipeline = pipeline(
+            "automatic-speech-recognition",
+            model=settings.CHINESE_ASR_MODEL,
+            #
+            # *** 錯誤的 'cache_dir' 參數已被移除 ***
+            #
+            device=self.torch_device_id # 傳入 0 (GPU) 或 -1 (CPU)
+        )
+        
+        logger.info("Chinese ASR pipeline loaded successfully")
+        
+    def _load_min_nan_models(self):
+        """Helper to load only Min Nan ASR models"""
+        if self.min_nan_model is not None:
+            return
 
-            # Load Whisper model for Chinese ASR
-            logger.info(f"Loading Chinese ASR model: {settings.CHINESE_ASR_MODEL}")
-            self.chinese_processor = WhisperProcessor.from_pretrained(
-                settings.CHINESE_ASR_MODEL,
-                cache_dir=settings.MODEL_CACHE_DIR
-            )
-            self.chinese_model = WhisperForConditionalGeneration.from_pretrained(
-                settings.CHINESE_ASR_MODEL,
-                cache_dir=settings.MODEL_CACHE_DIR
-            )
-            self.chinese_model.to(self.device)
-            self.chinese_model.eval()
-
-            # Load Wav2Vec2 model for Min Nan ASR
-            # Note: This uses a base model. For better Min Nan support, you should fine-tune this model
-            logger.info(f"Loading Min Nan ASR model: {settings.MIN_NAN_ASR_MODEL}")
-            self.min_nan_processor = Wav2Vec2Processor.from_pretrained(
-                settings.MIN_NAN_ASR_MODEL,
-                cache_dir=settings.MODEL_CACHE_DIR
-            )
-            self.min_nan_model = Wav2Vec2ForCTC.from_pretrained(
-                settings.MIN_NAN_ASR_MODEL,
-                cache_dir=settings.MODEL_CACHE_DIR
-            )
-            self.min_nan_model.to(self.device)
-            self.min_nan_model.eval()
-
-            self.models_loaded = True
-            logger.info("ASR models loaded successfully")
-
-        except Exception as e:
-            logger.error(f"Error loading ASR models: {str(e)}")
-            raise
+        logger.info(f"Loading Min Nan ASR model: {settings.MIN_NAN_ASR_MODEL}")
+        self.min_nan_processor = Wav2Vec2Processor.from_pretrained(
+            settings.MIN_NAN_ASR_MODEL,
+            cache_dir=settings.MODEL_CACHE_DIR
+        )
+        self.min_nan_model = Wav2Vec2ForCTC.from_pretrained(
+            settings.MIN_NAN_ASR_MODEL,
+            cache_dir=settings.MODEL_CACHE_DIR
+        )
+        self.min_nan_model.to(self.device)
+        self.min_nan_model.eval()
+        logger.info("Min Nan ASR models loaded successfully")
 
     def preprocess_audio(self, audio_path: str) -> Tuple[np.ndarray, int]:
         """
-        Load and preprocess audio file
-
-        Args:
-            audio_path: Path to audio file
-
-        Returns:
-            Tuple of (audio_array, sample_rate)
+        Load and preprocess audio file (僅供 Min Nan 模型使用)
         """
         try:
-            # Load audio file and resample to target sample rate
             audio, sample_rate = librosa.load(
                 audio_path,
                 sr=settings.SAMPLE_RATE,
@@ -91,58 +82,37 @@ class ASRService:
         except Exception as e:
             logger.error(f"Error preprocessing audio: {str(e)}")
             raise
-
+    
     def transcribe_chinese(
         self,
         audio_path: str
     ) -> Tuple[str, Optional[float], float]:
         """
-        Transcribe Chinese audio to text using Whisper
-
-        Args:
-            audio_path: Path to audio file
-
-        Returns:
-            Tuple of (transcribed_text, confidence, processing_time)
+        Transcribe Chinese audio to text using Whisper pipeline
         """
         start_time = time.time()
 
         try:
-            if not self.models_loaded:
-                self.load_models()
+            # 在需要時才載入 pipeline
+            self._load_chinese_models()
 
-            # Preprocess audio
-            audio, sample_rate = self.preprocess_audio(audio_path)
+            # 準備 generate 參數
+            generate_kwargs = {
+                "language": "zh",
+                "task": "transcribe"
+            }
 
-            # Process with Whisper
-            input_features = self.chinese_processor(
-                audio,
-                sampling_rate=sample_rate,
-                return_tensors="pt"
-            ).input_features
-
-            input_features = input_features.to(self.device)
-
-            # Generate transcription
-            with torch.no_grad():
-                # Force Chinese language
-                forced_decoder_ids = self.chinese_processor.get_decoder_prompt_ids(
-                    language="zh",
-                    task="transcribe"
-                )
-                predicted_ids = self.chinese_model.generate(
-                    input_features,
-                    forced_decoder_ids=forced_decoder_ids
-                )
-
-            # Decode transcription
-            transcription = self.chinese_processor.batch_decode(
-                predicted_ids,
-                skip_special_tokens=True
-            )[0]
+            # 直接將 *檔案路徑* 傳給 pipeline
+            result = self.chinese_pipeline(
+                audio_path,
+                chunk_length_s=30,      # 強制 30 秒切割
+                stride_length_s=5,      # 5 秒重疊，避免結尾被切斷
+                generate_kwargs=generate_kwargs
+            )
+            
+            transcription = result["text"].strip() # 獲取最終拼接的文字
 
             processing_time = time.time() - start_time
-
             logger.info(f"Chinese transcription completed in {processing_time:.2f}s")
             return transcription, None, processing_time
 
@@ -155,24 +125,17 @@ class ASRService:
         audio_path: str
     ) -> Tuple[str, Optional[float], float]:
         """
-        Transcribe Min Nan audio to text using Wav2Vec2
-
-        Args:
-            audio_path: Path to audio file
-
-        Returns:
-            Tuple of (transcribed_text, confidence, processing_time)
+        Transcribe Min Nan audio to text using Wav2Vec2 (此模型不支援長音訊)
         """
         start_time = time.time()
 
         try:
-            if not self.models_loaded:
-                self.load_models()
+            # 在需要時才載入
+            self._load_min_nan_models()
 
-            # Preprocess audio
+            # (注意: Min Nan 模型仍然有 30 秒限制，因為這段程式碼沒有實作 chunking)
             audio, sample_rate = self.preprocess_audio(audio_path)
 
-            # Process with Wav2Vec2
             inputs = self.min_nan_processor(
                 audio,
                 sampling_rate=sample_rate,
@@ -182,18 +145,13 @@ class ASRService:
 
             input_values = inputs.input_values.to(self.device)
 
-            # Generate transcription
             with torch.no_grad():
                 logits = self.min_nan_model(input_values).logits
 
-            # Get predicted ids
             predicted_ids = torch.argmax(logits, dim=-1)
-
-            # Decode transcription
             transcription = self.min_nan_processor.batch_decode(predicted_ids)[0]
 
             processing_time = time.time() - start_time
-
             logger.info(f"Min Nan transcription completed in {processing_time:.2f}s")
             return transcription, None, processing_time
 
@@ -208,13 +166,6 @@ class ASRService:
     ) -> Tuple[str, Optional[float], float]:
         """
         Transcribe audio to text based on language
-
-        Args:
-            audio_path: Path to audio file
-            language: Language type (CHINESE or MIN_NAN)
-
-        Returns:
-            Tuple of (transcribed_text, confidence, processing_time)
         """
         logger.info(f"Transcribing audio with language: {language}")
 
